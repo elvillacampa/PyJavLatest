@@ -1,0 +1,159 @@
+KILLER sudo fuser -k 8000/tcp
+gunicorn -k eventlet -w 1 -b 127.0.0.1:8080 --reload app:app
+sudo fuser -k 8080/tcp | gunicorn -k eventlet -w 1 -b 172.29.203.237:8080 --reload app:app
+
+1. Create app.py
+2. pip install python-socketio
+3. Setup the app.py
+
+	import socketio
+
+	sio = socketio.Server()
+	app = socketio.WSGIApp(sio)
+
+	@sio.event
+	def connect(sid, environ):
+		print(sid, 'connected')
+
+	@sio.event
+	def disconnect(sid):
+		print(sid, 'disconnected')
+
+3. Test if the server is working thru gunicorn
+	
+	pip install gunicorn
+	gunicorn --threads 50 app:app 
+
+4. Create public/index.html file for the client
+5. Setup the index.html
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<title> Socket IO Demo</title>
+	</head>
+	<body>
+		<h1> Socket IO Demo </h1>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.1.3/socket.io.min.js"></script>
+		<script type="text/javascript" src="index.js"></script>
+	</body>
+	</html>
+6. Test the client with a convenience feature, in app.py
+	
+	app = socketio.WSGIApp(sio, static_files={
+	'/':'./public/'
+	})
+
+7. Setup the index.js 
+	const sio = io();
+
+	sio.on('connect', () => {
+
+		console.log('connected');
+
+	});
+
+	sio.on('disconnect', () => {
+		
+		console.log('disconnected');
+
+	});
+
+8. Setup Websocket Support
+	
+	pip install eventlet==0.30.0 /// error in latest version so use this version
+
+9. Run using eventlet
+	
+	gunicorn -k eventlet -w 1 --reload app:app /// 1 worker is enough daw
+10. Events - Using Different events
+	
+	Define Emit to Server Function
+		In index.js
+			add 
+				sio.emit('emit', {numbers:[1, 2]}); 
+			inside the on connect function
+
+	Define emit receiver in server
+		@sio.event
+		def sum(sid, data):
+		    result = data['numbers'][0] + data['numbers'][1]
+		    sio.emit('sum_result', {'result': result}, to=sid)
+
+    Define emit receiver in client
+		sio.on('sum_result', (data) => {
+			console.log(data);
+		});
+
+11. Callbacks
+	
+	Client to Server and Back
+		Modify the server to just return a response
+			@sio.event
+			def sum(sid, data):
+			    result = data['numbers'][0] + data['numbers'][1]
+			    return result
+
+		Modify the client to receive the result by making it a request with a callback function
+			sio.on('connect', () => {
+
+				console.log('connected');
+				sio.emit('sum', {numbers:[1, 2]}, (result)=>{
+					console.log(result);
+				});
+			});
+
+	Server to Client and Back
+		trigger a function after connection
+		    sio.start_background_task(task, sid)
+		create the function that will be triggered
+			def task(sid):
+			    sio.sleep(5)
+			    sio.emit('mult', {'numbers': [3, 4]}, callback = cb)
+
+
+		define the callback function
+			def cb(data):
+			    print(data)
+
+		define the client receiver and returner in js
+			sio.on('mult', (data, cb) => {
+				const result = data.numbers[0] * data.numbers[1];
+				console.log(data);
+				cb(result);
+
+			});
+	Improve the python callback
+		delete the cb function in app.py
+		modify the task function
+			def task(sid):
+			    sio.sleep(5)
+			    print(sio.call('mult', {'numbers': [3, 4]}, to=sid))
+		delete the cb function
+
+12. Broadcast
+		Sample for broadcast: Send list of ids connected to all clients
+		In App.py
+			In connect handler, 
+				def connect(sid, environ):
+				    global client_count
+				    client_count+=1
+				    print(sid, 'connected')
+				    sio.start_background_task(task, sid)
+				    sio.emit('client_count', client_count)
+
+			In disconnect handler
+				def disconnect(sid):
+				    global client_count;
+				    client_count-=1
+				    print(sid, 'disconnected')
+				    sio.emit('client_count', client_count)
+		In JS, add the broacast receiver
+			sio.on('client_count', (count) => {
+				console.log("There are " + count + " connected client");
+			})
+13. Rooms
+
+
+
+
+Rotating around the center: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/rotate
